@@ -81,7 +81,7 @@ class FaceMozaic:
             if result.boxes and result.boxes.shape[0] != 0:
                 boxes = result.boxes[0].data.cpu().numpy() 
                 for box in boxes:
-                    face_book.register(*map(int, box[:4]), hp=min(1, int(fps / 3)), delta=frame_height / 12)
+                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps / 3)), delta=frame_height / 12)
             for face in face_book:
                 x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
                 face = frame[y1:y2, x1:x2]
@@ -90,7 +90,6 @@ class FaceMozaic:
                 face = cv2.resize(face, (0, 0), fx=1.0 / pixel_size, fy=1.0 / pixel_size)
                 face = cv2.resize(face, (face_width, face_height), interpolation=cv2.INTER_NEAREST)
                 frame[y1:y2, x1:x2] = face
-
             output_video.write(frame)
 
         cap.release()
