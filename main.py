@@ -68,6 +68,8 @@ class FaceMozaic:
 
         pixel_size = int(frame_height * self.pixel_size_rel)
         mask_blur_ksize = int(frame_height / 16)
+        if mask_blur_ksize % 2 == 0:
+            mask_blur_ksize += 1
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         output_video = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
