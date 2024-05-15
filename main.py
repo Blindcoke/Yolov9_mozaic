@@ -98,7 +98,6 @@ class FaceMozaic:
                 mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
                 mask = mask / 255.0
                 frame = (frame * (1 - mask) + blur * mask).astype(np.uint8)
-                output_video.write(frame)
             else:
                 for result in results_generator:
                     frame = result.orig_img
@@ -116,10 +115,13 @@ class FaceMozaic:
                         face = cv2.resize(face, (0, 0), fx=1.0 / pixel_size, fy=1.0 / pixel_size)
                         face = cv2.resize(face, (face_width, face_height), interpolation=cv2.INTER_NEAREST)
                         frame[y1:y2, x1:x2] = face
-                    output_video.write(frame)
+            output_video.write(frame)
+            cv2.imshow("Frame", frame)
+            cv2.waitKey(1)
 
         cap.release()
         output_video.release()
+        cv2.destroyAllWindows()
         return output_path
 
 face_mozaic = FaceMozaic()
