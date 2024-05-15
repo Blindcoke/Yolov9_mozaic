@@ -56,7 +56,6 @@ class FaceMozaic:
     def __init__(self, model_path="yolo/yolov8n-face.pt"):
         self.model = YOLO(model_path)
         self.pixel_size_rel = 0.015
-        self.soft_masking = True
 
     def add_mozaic(self, video_path):
         output_path=video_path.split(".")[0] + "_mozaic.mp4"
@@ -79,42 +78,23 @@ class FaceMozaic:
 
         for result in results_generator:
             frame = result.orig_img
-            if self.soft_masking:
-                blur = cv2.resize(frame, (0, 0), fx=1.0 / pixel_size, fy=1.0 / pixel_size)
-                blur = cv2.resize(blur, (frame_width, frame_height), interpolation=cv2.INTER_NEAREST)
-                mask = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                mask[:, :] = 0  # Set all values to 0
+            blur = cv2.resize(frame, (0, 0), fx=1.0 / pixel_size, fy=1.0 / pixel_size)
+            blur = cv2.resize(blur, (frame_width, frame_height), interpolation=cv2.INTER_NEAREST)
+            mask = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            mask[:, :] = 0  # Set all values to 0
             face_book.cleanup()
 
-            if self.soft_masking:
-                if result.boxes and result.boxes.shape[0] != 0:
-                    boxes = result.boxes[0].data.cpu().numpy() 
-                    for box in boxes:
-                        face_book.register(*map(int, box[:4]), hp=max(1, int(fps / 3)), delta=frame_height / 12)
-                for face in face_book:
-                    x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
-                    mask = cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
-                mask = cv2.GaussianBlur(mask, (mask_blur_ksize, mask_blur_ksize), 0)
-                mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-                mask = mask / 255.0
-                frame = (frame * (1 - mask) + blur * mask).astype(np.uint8)
-            else:
-                for result in results_generator:
-                    frame = result.orig_img
-                    face_book.cleanup()
-
-                    if result.boxes and result.boxes.shape[0] != 0:
-                        boxes = result.boxes[0].data.cpu().numpy() 
-                        for box in boxes:
-                            face_book.register(*map(int, box[:4]), hp=max(1, int(fps / 3)), delta=frame_height / 12)
-                    for face in face_book:
-                        x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
-                        face = frame[y1:y2, x1:x2]
-                        face_width = x2 - x1
-                        face_height = y2 - y1
-                        face = cv2.resize(face, (0, 0), fx=1.0 / pixel_size, fy=1.0 / pixel_size)
-                        face = cv2.resize(face, (face_width, face_height), interpolation=cv2.INTER_NEAREST)
-                        frame[y1:y2, x1:x2] = face
+            if result.boxes and result.boxes.shape[0] != 0:
+                boxes = result.boxes[0].data.cpu().numpy() 
+                for box in boxes:
+                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps / 3)), delta=frame_height / 12)
+            for face in face_book:
+                x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
+                mask = cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
+            mask = cv2.GaussianBlur(mask, (mask_blur_ksize, mask_blur_ksize), 0)
+            mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+            mask = mask / 255.0
+            frame = (frame * (1 - mask) + blur * mask).astype(np.uint8)
             output_video.write(frame)
             cv2.imshow("Frame", frame)
             cv2.waitKey(1)
