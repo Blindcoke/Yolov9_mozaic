@@ -74,7 +74,7 @@ class FaceMozaic:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         output_video = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
 
-        results_generator = self.model.predict(video_path, stream=True)
+        results_generator = self.model.track(video_path, stream=True, persist=True, show=True, conf=0.01, tracker="botsort.yaml")
 
         face_book = FaceBook()
 
@@ -87,9 +87,9 @@ class FaceMozaic:
             face_book.cleanup()
 
             if result.boxes and result.boxes.shape[0] != 0:
-                boxes = result.boxes[0].data.cpu().numpy() 
-                for box in boxes:
-                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps / 3)), delta=frame_height / 12)
+                boxes_numpy = result.boxes.data.cpu().numpy()
+                for box in boxes_numpy:
+                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps * 1.2)), delta=frame_height / 12)
             for face in face_book:
                 x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
                 mask = cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
