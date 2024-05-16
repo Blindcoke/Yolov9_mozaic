@@ -5,7 +5,7 @@ import numpy as np
 from ultralytics import YOLO
 
 class Face:
-    def __init__(self, x1, y1, x2, y2, hp=0, scale=1.5):
+    def __init__(self, x1, y1, x2, y2, hp=0, scale=1.15):
         x_center = (x1 + x2) / 2
         y_center = (y1 + y2) / 2
         self.scale = scale
@@ -62,7 +62,7 @@ class FaceBook:
             yield face
 
 class FaceMozaic:
-    def __init__(self, model_path="yolo/yolov8n-face.pt"):
+    def __init__(self, model_path="yolo/yolov9c_best.pt"):
         self.model = YOLO(model_path)
         self.pixel_size_rel = 0.015
 
