@@ -5,18 +5,27 @@ import numpy as np
 from ultralytics import YOLO
 
 class Face:
-    def __init__(self, x1, y1, x2, y2, hp=0):
-        self.x1 = x1
-        self.y1 = y1
-        self.x2 = x2
-        self.y2 = y2
+    def __init__(self, x1, y1, x2, y2, hp=0, scale=1.5):
+        x_center = (x1 + x2) / 2
+        y_center = (y1 + y2) / 2
+        self.scale = scale
+        scaled_width = (x2 - x1) / 2 * scale
+        scaled_height = (y2 - y1) / 2 * scale
+        self.x1 = int(x_center - scaled_width)
+        self.y1 = int(y_center - scaled_height)
+        self.x2 = int(x_center + scaled_width)
+        self.y2 = int(y_center + scaled_height)
         self.hp = hp
 
     def update(self, x1, y1, x2, y2, hp):
-        self.x1 = x1
-        self.y1 = y1
-        self.x2 = x2
-        self.y2 = y2
+        x_center = (x1 + x2) / 2
+        y_center = (y1 + y2) / 2
+        scaled_width = (x2 - x1) / 2 * self.scale
+        scaled_height = (y2 - y1) / 2 * self.scale
+        self.x1 = int(x_center - scaled_width)
+        self.y1 = int(y_center - scaled_height)
+        self.x2 = int(x_center + scaled_width)
+        self.y2 = int(y_center + scaled_height)
         self.hp = hp
 
     def distance(self, other):
@@ -67,7 +76,7 @@ class FaceMozaic:
         print(f"{frame_width}x{frame_height} @ {fps} FPS")
 
         pixel_size = int(frame_height * self.pixel_size_rel)
-        mask_blur_ksize = int(frame_height / 17)
+        mask_blur_ksize = int(frame_height / 16)
         if mask_blur_ksize % 2 == 0:
             mask_blur_ksize += 1
 
@@ -77,6 +86,7 @@ class FaceMozaic:
         results_generator = self.model.track(video_path, stream=True, persist=True, conf=0.01, tracker="face_tracker.yaml")
 
         face_book = FaceBook()
+        window_name = "Frame"
 
         for result in results_generator:
             frame = result.orig_img
@@ -98,8 +108,10 @@ class FaceMozaic:
             mask = mask / 255.0
             frame = (frame * (1 - mask) + blur * mask).astype(np.uint8)
             output_video.write(frame)
-            cv2.imshow("Frame", frame)
+            cv2.imshow(window_name, frame)
             cv2.waitKey(1)
+            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
 
         cap.release()
         output_video.release()
