@@ -5,7 +5,7 @@ import numpy as np
 from ultralytics import YOLO
 
 class Face:
-    def __init__(self, x1, y1, x2, y2, hp=0, scale=1.15):
+    def __init__(self, x1, y1, x2, y2, hp=0, scale=1.15, fps=30, damping_factor=5, debug=False):
         x_center = (x1 + x2) / 2
         y_center = (y1 + y2) / 2
         self.scale = scale
@@ -16,16 +16,38 @@ class Face:
         self.x2 = int(x_center + scaled_width)
         self.y2 = int(y_center + scaled_height)
         self.hp = hp
+        self.alpha = 1.0
+        self.fps = fps
+        self.damping_factor = damping_factor / fps
+        self.debug = debug
+        if self.debug:
+            self.color = (np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255))
 
     def update(self, x1, y1, x2, y2, hp):
         x_center = (x1 + x2) / 2
         y_center = (y1 + y2) / 2
         scaled_width = (x2 - x1) / 2 * self.scale
         scaled_height = (y2 - y1) / 2 * self.scale
-        self.x1 = int(x_center - scaled_width)
-        self.y1 = int(y_center - scaled_height)
-        self.x2 = int(x_center + scaled_width)
-        self.y2 = int(y_center + scaled_height)
+        new_x1 = int(x_center - scaled_width)
+        new_y1 = int(y_center - scaled_height)
+        new_x2 = int(x_center + scaled_width)
+        new_y2 = int(y_center + scaled_height)
+        if new_x1 <= self.x1:
+            self.x1 = new_x1
+        else:
+            self.x1 = int(self.x1 - (self.x1 - new_x1) * self.damping_factor)
+        if new_y1 <= self.y1:
+            self.y1 = new_y1
+        else:
+            self.y1 = int(self.y1 - (self.y1 - new_y1) * self.damping_factor)
+        if new_x2 >= self.x2:
+            self.x2 = new_x2
+        else:
+            self.x2 = int(self.x2 + (new_x2 - self.x2) * self.damping_factor)
+        if new_y2 >= self.y2:
+            self.y2 = new_y2
+        else:
+            self.y2 = int(self.y2 + (new_y2 - self.y2) * self.damping_factor)
         self.hp = hp
 
     def distance(self, other):
@@ -33,32 +55,46 @@ class Face:
 
 class FaceBook:
     def __init__(self):
-        self.registry = []
+        self.registry = {}
+        self.max_id = 0
 
-    def register(self, x1, y1, x2, y2, hp, delta):
-        face = Face(x1, y1, x2, y2)
-        closest_face = None
-        closest_distance = float("inf")
-        for neighbour in self.registry:
-            distance = face.distance(neighbour)
-            if distance < delta and distance < closest_distance:
-                closest_face = neighbour
-                closest_distance = distance
-        if closest_face:
-            closest_face.update(x1, y1, x2, y2, hp)
+    def register(self, x1, y1, x2, y2, hp, delta, fps=30, id=None):
+        face = Face(x1, y1, x2, y2, hp, fps=fps)
+        if id:
+            if id in self.registry.keys():
+                self.registry[id].update(x1, y1, x2, y2, hp)
+            else:
+                self.registry[id] = face
         else:
-            self.registry.append(Face(x1, y1, x2, y2, hp))
+            closest_face = None
+            closest_distance = float("inf")
+            for neighbour in self.registry.values():
+                distance = face.distance(neighbour)
+                if distance < delta and distance < closest_distance:
+                    closest_face = neighbour
+                    closest_distance = distance
+            if closest_face:
+                closest_face.update(x1, y1, x2, y2, hp)
+            else:
+                self.registry[self.max_id] = face
+                self.max_id += 1
+
+    def contains(self, id):
+        return id in self.registry.keys()
 
     def cleanup(self):
-        for face in self.registry:
-            face.hp -= 1
-        self.registry = [face for face in self.registry if face.hp > 0]
+        for face in self.registry.values():
+            if face.hp == 0:
+                face.alpha -= 1.0 / face.fps
+            else:
+                face.hp -= 1
+        self.registry = {k: v for k, v in self.registry.items() if v.alpha > 0}
 
     def __getitem__(self, index):
         return self.registry[index]
     
     def __iter__(self):
-        for face in self.registry:
+        for face in sorted(self.registry.values(), key=lambda face: face.alpha):
             yield face
 
 class FaceMozaic:
@@ -73,6 +109,7 @@ class FaceMozaic:
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
+        buffer_size = int(fps * 0.6)
         print(f"{frame_width}x{frame_height} @ {fps} FPS")
 
         pixel_size = int(frame_height * self.pixel_size_rel)
@@ -83,36 +120,52 @@ class FaceMozaic:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         output_video = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
 
-        results_generator = self.model.track(video_path, stream=True, persist=True, conf=0.01, tracker="face_tracker.yaml")
+        results_generator = self.model.track(video_path, stream=True, show=False, persist=True, conf=0.01, tracker="face_tracker.yaml")
 
         face_book = FaceBook()
         window_name = "Frame"
+        buffer = []
 
-        for result in results_generator:
-            frame = result.orig_img
-            blur = cv2.resize(frame, (0, 0), fx=1.0 / pixel_size, fy=1.0 / pixel_size)
-            blur = cv2.resize(blur, (frame_width, frame_height), interpolation=cv2.INTER_NEAREST)
-            mask = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            mask[:, :] = 0  # Set all values to 0
-            face_book.cleanup()
-
-            if result.boxes and result.boxes.shape[0] != 0:
-                boxes_numpy = result.boxes.data.cpu().numpy()
-                for box in boxes_numpy:
-                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12)
-            for face in face_book:
-                x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
-                mask = cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
-            mask = cv2.GaussianBlur(mask, (mask_blur_ksize, mask_blur_ksize), 0)
-            mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-            mask = mask / 255.0
-            frame = (frame * (1 - mask) + blur * mask).astype(np.uint8)
-            output_video.write(frame)
-            cv2.imshow(window_name, frame)
-            cv2.waitKey(1)
-            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+        result = next(results_generator, None)
+        while result is not None:
+            result_boxes = result.boxes.data.cpu().numpy()
+            for box in result_boxes:
+                if not face_book.contains(box[4]):
+                    for b in buffer:
+                        if not any(existing_box[4] == box[4] for existing_box in b["boxes"]):
+                            b["boxes"].append(box[:5])
+            buffer.append({"boxes": [box[:5] for box in result_boxes], "orig_img": result.orig_img})
+            result = next(results_generator, None)
+            working = True
+            while len(buffer) > buffer_size or (result is None and len(buffer) > 0):
+                current_image = buffer.pop(0)
+                boxes = current_image["boxes"]
+                frame = current_image["orig_img"]
+                blur = cv2.resize(frame, (0, 0), fx=1.0 / pixel_size, fy=1.0 / pixel_size)
+                blur = cv2.resize(blur, (frame_width, frame_height), interpolation=cv2.INTER_NEAREST)
+                mask = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                mask[:, :] = 0  # Set all values to 0
+                face_book.cleanup()
+                for box in boxes:
+                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=int(box[4]))
+                for face in face_book:
+                    x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
+                    mask = cv2.rectangle(mask, (x1, y1), (x2, y2), 255 * face.alpha, -1)
+                    if face.debug:
+                        frame = cv2.rectangle(frame, (x1, y1), (x2, y2), face.color, 2)
+                mask = cv2.GaussianBlur(mask, (mask_blur_ksize, mask_blur_ksize), 0)
+                mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+                mask = mask / 255.0
+                frame = (frame * (1 - mask) + blur * mask).astype(np.uint8)
+                output_video.write(frame)
+                cv2.imshow(window_name, frame)
+                cv2.waitKey(1)
+                if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    working = False
+                    print("Window closed")
+                    break
+            if not working:
                 break
-
         cap.release()
         output_video.release()
         cv2.destroyAllWindows()
