@@ -1,7 +1,7 @@
 import cv2
 import math
 import numpy as np
-
+from collections import defaultdict
 from ultralytics import YOLO
 
 class Face:
@@ -120,19 +120,25 @@ class FaceMozaic:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         output_video = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
 
-        results_generator = self.model.track(video_path, stream=True, show=False, persist=True, conf=0.01, tracker="face_tracker.yaml")
+        results_generator = self.model.track(video_path, stream=True, show=True, persist=True, iou=0.05,conf=0.01, tracker="face_tracker.yaml")
 
         face_book = FaceBook()
         window_name = "Frame"
         buffer = []
 
+        box_tracker = defaultdict(int)
+
         result = next(results_generator, None)
         while result is not None:
             result_boxes = result.boxes.data.cpu().numpy()
             for box in result_boxes:
-                if not face_book.contains(box[4]):
+                box_id = int(box[4])
+                box_size = (box[2] - box[0]) * (box[3] - box[1])
+                if box_size > 10000:
+                    box_tracker[box_id] += 1
+                if not face_book.contains(box_id):
                     for b in buffer:
-                        if not any(existing_box[4] == box[4] for existing_box in b["boxes"]):
+                        if not any(existing_box[4] == box_id for existing_box in b["boxes"]):
                             b["boxes"].append(box[:5])
             buffer.append({"boxes": [box[:5] for box in result_boxes], "orig_img": result.orig_img})
             result = next(results_generator, None)
@@ -147,7 +153,14 @@ class FaceMozaic:
                 mask[:, :] = 0  # Set all values to 0
                 face_book.cleanup()
                 for box in boxes:
-                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=int(box[4]))
+                    box_id = int(box[4])
+                    box_size = (box[2] - box[0]) * (box[3] - box[1])
+                    print("Box size:", box_size)
+                    print("Box tracker:", box_tracker[box_id], "box id:" , box_id)
+                    if box_size > 10000 and box_tracker[box_id] < fps * 0.5:
+                        print("Skipping box with id", box_id, "and size", box_size, "and count", box_tracker[box_id])
+                        continue
+                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
                 for face in face_book:
                     x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
                     mask = cv2.rectangle(mask, (x1, y1), (x2, y2), 255 * face.alpha, -1)
@@ -166,6 +179,7 @@ class FaceMozaic:
                     break
             if not working:
                 break
+
         cap.release()
         output_video.release()
         cv2.destroyAllWindows()
