@@ -2,7 +2,7 @@ import cv2
 import math
 import numpy as np
 import sys
-
+from matplotlib import pyplot as plt
 from collections import defaultdict
 from ultralytics import YOLO
 
@@ -100,9 +100,28 @@ class FaceBook:
             yield face
 
 class FaceMozaic:
-    def __init__(self, model_path="yolo/yolov9c_best.pt"):
+    def __init__(self, model_path="yolo/yolov9c_best.pt", model_path2="yolo/yolov8n-face.pt"):
         self.model = YOLO(model_path)
+        self.model2 = YOLO(model_path2)
         self.pixel_size_rel = 0.015
+    
+    def enlarge_box(self, box, frame_height, frame_width, scale=1.5):
+        x1, y1, x2, y2 = box[:4]
+        width = x2 - x1
+        height = y2 - y1
+
+        hw = width * scale / 2
+        hh = height * scale / 2
+
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+
+        x1_new = max(0, cx - hw)
+        y1_new = max(0, cy - hh)
+        x2_new = min(frame_width - 1, cx + hw)
+        y2_new = min(frame_height - 1, cy + hh)
+
+        return int(x1_new), int(y1_new), int(x2_new), int(y2_new)
 
     def add_mozaic(self, video_path):
         output_path=video_path.split(".")[0] + "_mozaic.mp4"
@@ -129,14 +148,14 @@ class FaceMozaic:
         buffer = []
 
         box_tracker = defaultdict(int)
-
+        box_threshold = frame_height * 20
         result = next(results_generator, None)
         while result is not None:
             result_boxes = result.boxes.data.cpu().numpy()
             for box in result_boxes:
                 box_id = int(box[4])
                 box_size = (box[2] - box[0]) * (box[3] - box[1])
-                if box_size > 10000:
+                if box_size > box_threshold:
                     box_tracker[box_id] += 1
                 if not face_book.contains(box_id):
                     for b in buffer:
@@ -159,10 +178,25 @@ class FaceMozaic:
                     box_size = (box[2] - box[0]) * (box[3] - box[1])
                     print("Box size:", box_size)
                     print("Box tracker:", box_tracker[box_id], "box id:" , box_id)
-                    if box_size > 10000 and box_tracker[box_id] < fps * 0.5:
-                        print("Skipping box with id", box_id, "and size", box_size, "and count", box_tracker[box_id])
-                        continue
-                    face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
+                    # if box_size > 10000 and box_tracker[box_id] < fps * 0.5:
+                    #     print("Skipping box with id", box_id, "and size", box_size, "and count", box_tracker[box_id])
+                    #     continue
+                    if box_size > box_threshold:
+                        x1, y1, x2, y2 = self.enlarge_box(box, frame_height, frame_width)
+                        cropped_box = result.orig_img[y1:y2, x1:x2]
+
+                        face_result = self.model2(cropped_box)
+                        print("Face result:", face_result)
+                        print("Face result boxes:", face_result[0].boxes.data.cpu().numpy()[:5])
+                        face_boxes = face_result[0].boxes.data.cpu().numpy()
+                        if face_result[0].boxes:
+                            print("Face detected in the box.")
+                            x1, y1, x2, y2 = self.enlarge_box(face_boxes[0], frame_height, frame_width)
+                            face_book.register(*map(int, [x1, y1, x2, y2]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
+                            plt.imshow(cropped_box)
+                            plt.show()
+                    else:
+                        face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
                 for face in face_book:
                     x1, y1, x2, y2 = face.x1, face.y1, face.x2, face.y2
                     mask = cv2.rectangle(mask, (x1, y1), (x2, y2), 255 * face.alpha, -1)
