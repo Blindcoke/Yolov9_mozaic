@@ -1,6 +1,8 @@
 import cv2
 import math
 import numpy as np
+import sys
+
 from collections import defaultdict
 from ultralytics import YOLO
 
@@ -186,5 +188,5 @@ class FaceMozaic:
         return output_path
 
 face_mozaic = FaceMozaic()
-output_video_path = face_mozaic.add_mozaic("videos/test2_short.mp4")
+output_video_path = face_mozaic.add_mozaic(sys.argv[1])
 print("Video successfully saved to:", output_video_path)
