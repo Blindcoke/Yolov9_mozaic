@@ -186,17 +186,14 @@ class FaceMozaic:
                         cropped_box = frame[y1:y2, x1:x2]
                         
                         face_result = self.model2(cropped_box)
-                        print("Face result:", face_result)
-                        print("Face result boxes:", face_result[0].boxes.data.cpu().numpy()[:5])
                         face_boxes = face_result[0].boxes.data.cpu().numpy()
                         if face_result[0].boxes:
-                            print("Face detected in the box.")
-                            x1, y1, x2, y2 = self.enlarge_box(face_boxes[0], frame_width, frame_height)
-                            face_book.register(*map(int, [x1, y1, x2, y2]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
-                            cropped_box - cv2.rectangle(cropped_box, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            plt.imshow(cropped_box)
-                            plt.show()
-
+                            fx1, fy1, fx2, fy2 = self.enlarge_box(face_boxes[0], frame_width, frame_height)
+                            fx1 += x1
+                            fy1 += y1
+                            fx2 += x1
+                            fy2 += y1
+                            face_book.register(fx1, fy1, fx2, fy2, hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
                     else:
                         face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
                 for face in face_book:
