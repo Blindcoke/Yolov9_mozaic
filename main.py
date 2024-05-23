@@ -105,7 +105,7 @@ class FaceMozaic:
         self.model2 = YOLO(model_path2)
         self.pixel_size_rel = 0.015
     
-    def enlarge_box(self, box, frame_width, frame_height, scale=1.5):
+    def enlarge_box(self, box, frame_width, frame_height, scale=1.3):
         x1, y1, x2, y2 = box[:4]
         width = x2 - x1
         height = y2 - y1
@@ -176,15 +176,15 @@ class FaceMozaic:
                 for box in boxes:
                     box_id = int(box[4])
                     box_size = (box[2] - box[0]) * (box[3] - box[1])
-                    print("Box size:", box_size)
+                    
                     # print("Box tracker:", box_tracker[box_id], "box id:" , box_id)
                     # if box_size > 10000 and box_tracker[box_id] < fps * 0.5:
                     #     print("Skipping box with id", box_id, "and size", box_size, "and count", box_tracker[box_id])
                     #     continue
                     if box_size > box_threshold:
                         x1, y1, x2, y2 = self.enlarge_box(box, frame_width, frame_height)
-                        cropped_box = result.orig_img[y1:y2, x1:x2]
-
+                        cropped_box = frame[y1:y2, x1:x2]
+                        
                         face_result = self.model2(cropped_box)
                         print("Face result:", face_result)
                         print("Face result boxes:", face_result[0].boxes.data.cpu().numpy()[:5])
@@ -196,6 +196,7 @@ class FaceMozaic:
                             cropped_box - cv2.rectangle(cropped_box, (x1, y1), (x2, y2), (0, 255, 0), 2)
                             plt.imshow(cropped_box)
                             plt.show()
+
                     else:
                         face_book.register(*map(int, box[:4]), hp=max(1, int(fps)), delta=frame_height / 12, fps=fps, id=box_id)
                 for face in face_book:
