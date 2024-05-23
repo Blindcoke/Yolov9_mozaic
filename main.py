@@ -25,7 +25,7 @@ class Face:
         if self.debug:
             self.color = (np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255))
 
-    def update(self, x1, y1, x2, y2, hp, alpha=1.0):
+    def update(self, x1, y1, x2, y2, hp):
         x_center = (x1 + x2) / 2
         y_center = (y1 + y2) / 2
         scaled_width = (x2 - x1) / 2 * self.scale
@@ -51,7 +51,6 @@ class Face:
         else:
             self.y2 = int(self.y2 + (new_y2 - self.y2) * self.damping_factor)
         self.hp = hp
-        self.alpha = alpha
 
     def distance(self, other):
         return math.dist([(self.x1 + self.x2) / 2, (self.y1 + self.y2) / 2], [(other.x1 + other.x2) / 2, (other.y1 + other.y2) / 2])
@@ -65,7 +64,7 @@ class FaceBook:
         face = Face(x1, y1, x2, y2, hp, fps=fps)
         if id:
             if id in self.registry.keys():
-                self.registry[id].update(x1, y1, x2, y2, hp, 1.0)
+                self.registry[id].update(x1, y1, x2, y2, hp)
             else:
                 self.registry[id] = face
         else:
@@ -77,7 +76,7 @@ class FaceBook:
                     closest_face = neighbour
                     closest_distance = distance
             if closest_face:
-                closest_face.update(x1, y1, x2, y2, hp, 1.0)
+                closest_face.update(x1, y1, x2, y2, hp)
             else:
                 self.registry[self.max_id] = face
                 self.max_id += 1
@@ -149,7 +148,8 @@ class FaceMozaic:
         buffer = []
 
         # box_tracker = defaultdict(int)
-        box_threshold = frame_height * 20
+        box_threshold = frame_height * 35
+        
         result = next(results_generator, None)
         while result is not None:
             result_boxes = result.boxes.data.cpu().numpy()
@@ -185,7 +185,6 @@ class FaceMozaic:
                     if box_size > box_threshold:
                         x1, y1, x2, y2 = self.enlarge_box(box, frame_width, frame_height)
                         cropped_box = frame[y1:y2, x1:x2]
-                        
                         face_result = self.model2(cropped_box)
                         face_boxes = face_result[0].boxes.data.cpu().numpy()
                         if face_result[0].boxes:
