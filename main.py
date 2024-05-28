@@ -3,8 +3,8 @@ import math
 import numpy as np
 import sys
 from matplotlib import pyplot as plt
-from collections import defaultdict
 from ultralytics import YOLO
+import mediapipe as mp
 
 class Face:
     def __init__(self, x1, y1, x2, y2, hp=0, scale=1.15, fps=30, damping_factor=5, debug=False):
@@ -61,8 +61,9 @@ class FaceBook:
         self.registry = {}
         self.max_id = 0
 
-    def register(self, x1, y1, x2, y2, hp, delta, fps=30, id=None):
+    def register(self, x1, y1, x2, y2, hp, delta, alpha=1.0, fps=30, id=None):
         face = Face(x1, y1, x2, y2, hp, fps=fps)
+        face.alpha = alpha
         if id:
             if id in self.registry.keys():
                 self.registry[id].update(x1, y1, x2, y2, hp)
@@ -101,9 +102,9 @@ class FaceBook:
             yield face
 
 class FaceMozaic:
-    def __init__(self, model_path="yolo/yolov9c_best.pt", model_path2="yolo/yolov8n-face.pt"):
+    def __init__(self, model_path="yolo/yolov9c_best.pt"):
         self.model = YOLO(model_path)
-        self.model2 = YOLO(model_path2)
+        self.model2 = mp.solutions.face_detection.FaceDetection(min_detection_confidence=0.5)
         self.pixel_size_rel = 0.015
     
     def enlarge_box(self, box, frame_width, frame_height, scale=1.3):
@@ -148,8 +149,9 @@ class FaceMozaic:
         window_name = "Frame"
         buffer = []
 
-        # box_tracker = defaultdict(int)
+
         box_threshold = frame_height * 35
+        
         
         result = next(results_generator, None)
         while result is not None:
@@ -157,12 +159,11 @@ class FaceMozaic:
             for box in result_boxes:
                 box_id = int(box[4])
                 box_size = (box[2] - box[0]) * (box[3] - box[1])
-                # if box_size > box_threshold:
-                #     box_tracker[box_id] += 1
+
                 if not face_book.contains(box_id):
-                    for b in buffer:
+                    for i, b in enumerate(buffer):
                         if not any(existing_box[4] == box_id for existing_box in b["boxes"]):
-                            b["boxes"].append(box[:5])
+                            b["boxes"].append([*box[:5], min((i + 1) / buffer_size, 1)])
             buffer.append({"boxes": [box[:5] for box in result_boxes], "orig_img": result.orig_img})
             result = next(results_generator, None)
             working = True
@@ -178,18 +179,25 @@ class FaceMozaic:
                 for box in boxes:
                     box_id = int(box[4])
                     box_size = (box[2] - box[0]) * (box[3] - box[1])
-                    
-                    # print("Box tracker:", box_tracker[box_id], "box id:" , box_id)
-                    # if box_size > 10000 and box_tracker[box_id] < fps * 0.5:
-                    #     print("Skipping box with id", box_id, "and size", box_size, "and count", box_tracker[box_id])
-                    #     continue
+                    box_alpha = 1.0
+                    if len(box) > 5:
+                        box_alpha = box[5]
                     if box_size > box_threshold:
                         x1, y1, x2, y2 = self.enlarge_box(box, frame_width, frame_height)
                         cropped_box = frame[y1:y2, x1:x2]
-                        face_result = self.model2(cropped_box)
-                        face_boxes = face_result[0].boxes.data.cpu().numpy()
-                        if face_result[0].boxes:
-                            fx1, fy1, fx2, fy2 = self.enlarge_box(face_boxes[0], frame_width, frame_height)
+                        box_width = x2 - x1
+                        box_height = y2 - y1
+                        face_result = self.model2.process(cv2.cvtColor(cropped_box, cv2.COLOR_BGR2RGB))
+                        if face_result.detections:
+                            face_boxes = face_result.detections[0].location_data.relative_bounding_box
+                            bx1 = int(face_boxes.xmin * box_width)
+                            by1 = int(face_boxes.ymin * box_height)
+                            bx2 = int((face_boxes.xmin + face_boxes.width) * box_width)
+                            by2 = int((face_boxes.ymin + face_boxes.height) * box_height)
+                            face = cropped_box[by1:by2, bx1:bx2]
+                            plt.imshow(face)
+                            plt.show()
+                            fx1, fy1, fx2, fy2 = self.enlarge_box([bx1, by1, bx2, by2], frame_width, frame_height)
                             fx1 += x1
                             fy1 += y1
                             fx2 += x1
