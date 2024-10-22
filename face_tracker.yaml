@@ -16,3 +16,6 @@ gmc_method: sparseOptFlow # method of global motion compensation
 proximity_thresh: 0.5
 appearance_thresh: 0.25
 with_reid: False
+
+# Add fuse_score for BoT-SORT
+fuse_score: True  # or False, depending on your needs
